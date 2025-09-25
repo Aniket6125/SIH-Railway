@@ -1,0 +1,11 @@
+train_id,type,origin,destination,scheduled_departure,priority,speed,dwell_time,platform_preferred
+EXP001,Express,A,D,08:00,1,100,2,A-P1
+FRT001,Freight,A,C,08:01,3,60,3,A-P1
+LOC001,Local,B,D,08:05,2,80,2,B-P1
+LOC002,Local,B,D,08:06,2,80,2,B-P1
+EXP002,Express,B,D,08:07,1,100,2,B-P2
+EXP003,Express,A,C,08:09,1,100,2,A-P2
+FRT002,Freight,C,D,08:20,3,60,3,C-P1
+EXP004,Express,C,D,08:21,1,100,2,C-P1
+
+

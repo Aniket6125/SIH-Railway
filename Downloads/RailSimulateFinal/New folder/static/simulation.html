@@ -1,0 +1,895 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Rail Simulation Prototype</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --bg:#0f1724; --panel:#0b1220; --muted:#94a3b8;
+    --conflict:#ff4d4f; --pending:#ff9f1c; --ok:#22c55e;
+    --express:#ef4444; --local:#3b82f6; --freight:#10b981;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  html,body{height:100%;margin:0;background:linear-gradient(180deg,#081028,#071226);color:#e6eef8}
+  .wrap{display:flex;height:100vh;gap:14px;padding:14px;box-sizing:border-box}
+  .left{flex:1;min-width:820px;background:linear-gradient(180deg,#071026,#08162b);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6)}
+  .right{width:360px;background:#071826;border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,0.6);overflow:auto}
+  h2{margin:6px 0 12px 0;font-size:18px}
+  #canvasWrap{background:linear-gradient(180deg,#05263b,#04202f);border-radius:8px;padding:12px}
+  canvas{display:block;border-radius:6px;background:transparent}
+  .controls{display:flex;gap:8px;align-items:center;margin-top:10px}
+  .btn{background:#0b2740;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);cursor:pointer;color:#cfe8ff}
+  .small{font-size:12px;color:var(--muted)}
+  .kpi{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+  .kpi .row{display:flex;justify-content:space-between;align-items:center;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
+  .log{margin-top:12px;max-height:240px;overflow:auto;font-size:12px}
+  .popup{position:absolute;left:50%;top:20%;transform:translateX(-50%);background:#081526;border-radius:10px;padding:12px;width:420px;border:1px solid rgba(255,255,255,0.04);box-shadow:0 12px 30px rgba(0,0,0,0.6);z-index:40}
+  .popup h3{margin:0 0 8px 0}
+  .popup .tags{display:flex;gap:6px;margin-bottom:6px}
+  .chip{padding:4px 8px;border-radius:6px;background:rgba(255,255,255,0.03);font-size:12px}
+  .popup .actions{display:flex;gap:8px;margin-top:8px;justify-content:flex-end}
+  .badge{padding:2px 6px;border-radius:6px;background:var(--pending);color:#071826;font-weight:600;font-size:12px}
+  .audit-row{padding:8px;border-radius:6px;background:rgba(255,255,255,0.02);margin-bottom:6px}
+  .small-muted{font-size:12px;color:#94a3b8}
+  .toggle{display:flex;gap:8px;align-items:center}
+  .signal{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="left">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <h2>Simulation — Prototype Match</h2>
+      <div class="small">Time: <span id="clock">08:00</span></div>
+    </div>
+
+    <div id="canvasWrap">
+      <div style="position:relative">
+        <canvas id="railCanvas" width="1200" height="420"></canvas>
+        <!-- popup container -->
+        <div id="popupContainer" style="position:absolute;left:0;right:0;top:0;pointer-events:none"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="playPause">Play</button>
+      <label class="small" style="display:flex;gap:8px;align-items:center">
+        Speed
+        <select id="speed" class="btn">
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+        </select>
+      </label>
+      <label class="small" style="display:flex;gap:8px;align-items:center">
+        Timeline
+        <input id="timeSlider" type="range" min="0" max="480" value="0" style="width:400px">
+      </label>
+      <div class="small">Mode:
+        <span id="modeLabel" class="badge" style="margin-left:8px;background:rgba(34,197,94,0.15);color:var(--ok)">Manual</span>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <div style="flex:1">
+        <div class="small-muted">Gantt / Schedule (simplified)</div>
+        <canvas id="gantt" width="1160" height="80" style="border-radius:6px;margin-top:6px;background:rgba(255,255,255,0.02)"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="right">
+    <h2>Controls & Audit</h2>
+    <div class="kpi">
+      <div class="row"><div class="small-muted">Total Delay</div><div id="kpiDelay">0 min</div></div>
+      <div class="row"><div class="small-muted">Conflicts (live)</div><div id="kpiConf">0</div></div>
+      <div class="row"><div class="small-muted">Resolved</div><div id="kpiResolved">0</div></div>
+    </div>
+
+    <div style="margin-top:10px">
+      <div class="toggle">
+        <label class="small-muted">Auto Apply</label>
+        <input type="checkbox" id="autoApply">
+        <label class="small-muted">Emergency Platform (Activate)</label>
+        <input type="checkbox" id="emgToggle">
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small-muted">Audit Log</div>
+      <div id="auditList" class="log"></div>
+    </div>
+
+    <div style="margin-top:12px">
+      <div class="small-muted">Legend</div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <div style="display:flex;gap:6px;align-items:center"><div style="width:14px;height:14px;background:var(--express);border-radius:3px"></div><div class="small-muted">Express</div></div>
+        <div style="display:flex;gap:6px;align-items:center"><div style="width:14px;height:14px;background:var(--local);border-radius:3px"></div><div class="small-muted">Local</div></div>
+        <div style="display:flex;gap:6px;align-items:center"><div style="width:14px;height:14px;background:var(--freight);border-radius:3px"></div><div class="small-muted">Freight</div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/*
+  Rail Simulation demo (vanilla JS Canvas)
+  - Stations A,B,C,D arranged left->right
+  - Double tracks (up/down), each interstation link has 3 blocks
+  - B has a siding/loop
+  - Emergency platform available when toggled
+  - Simple scheduler & conflict detection (block overlap / platform overlap / headway)
+  - Popup suggestions and ability to Apply (hold at siding / delay origin / assign emergency platform)
+*/
+
+// ---------- Config & Helpers ----------
+const canvas = document.getElementById('railCanvas');
+const ctx = canvas.getContext('2d');
+const gantt = document.getElementById('gantt');
+const gctx = gantt.getContext('2d');
+
+const W = canvas.width, H = canvas.height;
+const stations = [
+  {id:'A', x:80, y:60, platforms:3},
+  {id:'B', x:340, y:60, platforms:2, siding:true},
+  {id:'C', x:620, y:60, platforms:2},
+  {id:'D', x:940, y:60, platforms:3}
+];
+const blockSlices = 3; // each inter-station link divided into 3 blocks
+// pixel dimensions for track rendering
+const trackTopY = 160, trackBotY = 220;
+const laneHeight = 30;
+
+const startSimMinutes = 8*60; // 08:00 in minutes
+let simTime = 8*60; // minutes
+let playing = false;
+let speed = 1;
+let autoApply = false;
+let emgActive = false;
+
+const popupContainer = document.getElementById('popupContainer');
+const auditList = document.getElementById('auditList');
+
+// sample timetable (simple)
+let trains = [
+  {id:'EXP001', type:'Express', color:'--express', priority:3, origin:'A', dest:'D', scheduled_departure: 8*60+2, speed: 80, dwell:2},
+  {id:'FRT001', type:'Freight', color:'--freight', priority:1, origin:'A', dest:'D', scheduled_departure: 8*60+3, speed: 40, dwell:1},
+  {id:'LOC001', type:'Local', color:'--local', priority:2, origin:'B', dest:'C', scheduled_departure: 8*60+5, speed: 50, dwell:1.5},
+  {id:'LOC002', type:'Local', color:'--local', priority:2, origin:'C', dest:'D', scheduled_departure: 8*60+7, speed: 50, dwell:1.5}
+];
+
+// internal runtime fields
+trains = trains.map(t=>({
+  ...t,
+  px:0,py:0,
+  status:'waiting', // waiting, moving, dwelling, held, in_siding
+  currentSection: null, // e.g., 'A-B-b1'
+  scheduled: {...t}
+}));
+
+// derived geometry: create sections and blocks between station pairs
+let sections = []; // each section: {from:'A',to:'B',x1,x2,blocks:[]}
+for(let i=0;i<stations.length-1;i++){
+  const a=stations[i], b=stations[i+1];
+  const x1=a.x+50, x2=b.x-50;
+  const blocks=[];
+  const blen = (x2-x1)/blockSlices;
+  for(let k=0;k<blockSlices;k++){
+    blocks.push({id:`${a.id}-${b.id}-b${k+1}`, x1:x1+k*blen, x2:x1+(k+1)*blen});
+  }
+  sections.push({from:a.id,to:b.id,x1,x1,x2,blocks});
+}
+
+// runtime bookkeeping
+let liveConflicts = [];
+let resolvedCount = 0;
+let totalDelay = 0;
+
+// UI elements
+const playBtn = document.getElementById('playPause');
+const speedEl = document.getElementById('speed');
+const timeSlider = document.getElementById('timeSlider');
+const clockEl = document.getElementById('clock');
+const kpiConf = document.getElementById('kpiConf');
+const kpiResolved = document.getElementById('kpiResolved');
+const kpiDelay = document.getElementById('kpiDelay');
+const autoApplyEl = document.getElementById('autoApply');
+const emgToggle = document.getElementById('emgToggle');
+
+// ---------- Utility functions ----------
+function minsToClock(m){
+  const hh = Math.floor(m/60), mm = Math.floor(m%60);
+  return `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+function logAudit(entry){
+  const div = document.createElement('div');
+  div.className='audit-row';
+  div.innerHTML = `<div style="display:flex;justify-content:space-between"><div><strong>${entry.title}</strong></div><div class="small-muted">${minsToClock(entry.time)}</div></div><div class="small-muted" style="margin-top:6px">${entry.detail}</div>`;
+  auditList.prepend(div);
+}
+
+// ---------- Drawing ----------
+function drawScene(){
+  ctx.clearRect(0,0,W,H);
+  // draw stations and platforms
+  stations.forEach(st=>{
+    // station area
+    ctx.fillStyle = '#071827';
+    roundRect(ctx, st.x-70, 10, 140, 120, 8, true, false);
+    // label
+    ctx.fillStyle = "#cfe8ff";
+    ctx.font = "14px Inter, sans-serif";
+    ctx.fillText(`Station ${st.id}`, st.x-30, 32);
+
+    // draw platforms stacked/side-by-side
+    const pcount = st.platforms;
+    for(let p=0;p<pcount;p++){
+      const pw = 28, ph=64;
+      const px = st.x - (pcount* (pw+6))/2 + p*(pw+6);
+      const py = 40;
+      // dashed if emergency (EMG placeholder)
+      ctx.strokeStyle = '#214457';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([]);
+      roundRect(ctx, px, py, pw, ph, 6, false, true);
+      ctx.fillStyle = '#0b2230';
+      ctx.fillRect(px,py,pw,ph);
+      // platform label
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = "10px Inter, sans-serif";
+      ctx.fillText(`${st.id}-P${p+1}`, px+2, py+ph+12);
+    }
+
+    // draw siding for station B
+    if(st.siding){
+      // small bypass track to right of station
+      ctx.strokeStyle = '#2b4b57';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(st.x+60, trackTopY-6);
+      ctx.lineTo(st.x+120, trackTopY-6);
+      ctx.stroke();
+      // siding capacity indicator
+      ctx.fillStyle = '#0b2230';
+      roundRect(ctx, st.x+60, trackTopY-26, 56, 20, 6, true, false);
+      ctx.fillStyle = '#cfe8ff';
+      ctx.font = "12px Inter, sans-serif";
+      ctx.fillText('B-siding', st.x+68, trackTopY-12);
+    }
+  });
+
+  // draw tracks (double) horizontally
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#153b4b';
+  // top lane (Up)
+  ctx.beginPath();
+  ctx.moveTo(stations[0].x-120, trackTopY);
+  ctx.lineTo(stations[stations.length-1].x+120, trackTopY);
+  ctx.stroke();
+  // bottom lane (Down)
+  ctx.beginPath();
+  ctx.moveTo(stations[0].x-120, trackBotY);
+  ctx.lineTo(stations[stations.length-1].x+120, trackBotY);
+  ctx.stroke();
+
+  // subdivide tracks into blocks and draw separators and small signal lights
+  sections.forEach(sec=>{
+    sec.blocks.forEach((b, i)=>{
+      // separator
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(b.x2, trackTopY-20);
+      ctx.lineTo(b.x2, trackBotY+20);
+      ctx.stroke();
+      // small signal circle above block entry
+      const sigX = b.x1+4;
+      ctx.beginPath();
+      ctx.fillStyle = '#2f855a';
+      ctx.arc(sigX, trackTopY-28, 6,0,Math.PI*2);
+      ctx.fill();
+      // block id text (small)
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = "10px Inter, sans-serif";
+      ctx.fillText(b.id, b.x1+6, trackTopY-36);
+    });
+  });
+
+  // emergency platform visual (near D)
+  if(emgActive){
+    ctx.strokeStyle = '#ffd966';
+    ctx.setLineDash([6,4]);
+    roundRect(ctx, stations[3].x+80, 40, 80, 64, 8, false, true);
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#0b2230';
+    ctx.font = "12px Inter, sans-serif";
+    ctx.fillText('EMG', stations[3].x+110, 46);
+  }
+
+  // draw trains
+  function drawTrain(tr) {
+  ctx.fillStyle = (tr.type === "Freight") ? "brown" : "blue";
+  ctx.fillRect(tr.px, tr.py, 20, 10);
+
+  ctx.fillStyle = "black";
+  ctx.fillText(tr.id, tr.px, tr.py - 5);
+}
+
+  trains.forEach(tr => {
+  // 🚆 Rules apply karo
+  applyRailwayRules(tr, trains);
+
+  // Agar hold hai (red signal / platform busy etc), toh position update mat karo
+  if (tr.hold) return;
+
+  // Warna movement allow karo
+  updateTrainPosition(tr);
+
+  // Drawing code
+  drawTrain(tr);
+});
+
+  trains.forEach(tr=>{
+    // position determined by runtime px,py computed in updatePositions()
+    const x = tr.px || (stations.find(s=>s.id===tr.origin).x);
+    const y = tr.py || trackTopY - 10; // place on top track by default
+    // train body
+    ctx.fillStyle = (tr.status === 'conflict') ? '#ffb4b4' : getComputedStyle(document.documentElement).getPropertyValue(tr.color) || '#888';
+    if(tr.status === 'conflict'){ ctx.strokeStyle = 'red'; ctx.lineWidth=2; }
+    ctx.beginPath();
+    roundRect(ctx, x-18, y-12, 66, 24, 6, true, tr.status==='conflict');
+    // label
+    ctx.fillStyle = '#06121a';
+    ctx.font = "12px Inter, sans-serif";
+    ctx.fillText(tr.id, x-10, y+4);
+    // badge type/priority
+    ctx.fillStyle = '#ffffffcc';
+    ctx.fillRect(x+40, y-10, 18, 16);
+    ctx.fillStyle = '#06121a';
+    ctx.font = "10px Inter, sans-serif";
+    ctx.fillText((tr.type[0]||'?'), x+44, y+3);
+    ctx.fillText(tr.priority, x+48, y+15);
+    // show hold/pulse
+    if(tr.status==='held' || tr.status==='in_siding'){
+      // pulsing outline
+      ctx.strokeStyle = 'rgba(255,165,0,0.9)';
+      ctx.setLineDash([4,6]);
+      ctx.lineWidth = 2;
+      roundRect(ctx, x-20, y-14, 70, 28, 8, false, true);
+      ctx.setLineDash([]);
+    }
+    // show timer if dwelling/held
+    if(tr.timer){
+      ctx.fillStyle = '#ffffffcc';
+      ctx.font = "11px Inter, sans-serif";
+      ctx.fillText(`Hold: ${Math.max(0,Math.ceil(tr.timer))}m`, x-10, y-18);
+    }
+  });
+
+  // draw Gantt simplified
+  drawGantt();
+}
+
+function roundRect(ctx, x, y, w, h, r, fill, stroke){
+  if (typeof r === 'undefined') r = 5;
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+  if(fill) ctx.fill();
+  if(stroke) ctx.stroke();
+}
+
+function drawGantt(){
+  gctx.clearRect(0,0,gantt.width,gantt.height);
+  const left = 20, top=10, w=gantt.width-40, h=60;
+  // timeline: 08:00 to 16:00 (for simplicity show 0..480 minutes)
+  const total = 480;
+  trains.forEach((t,i)=>{
+    const y = top + i*14;
+    const tstart = t.scheduled_departure - startSimMinutes;
+    const duration = 40; // arbitrary width
+    const x = left + (tstart/total)*w;
+    gctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(t.color) || '#888';
+    gctx.fillRect(x, y,  Math.max(14,(duration/total)*w), 10);
+    gctx.fillStyle = '#cfe8ff';
+    gctx.font = "10px Inter, sans-serif";
+    gctx.fillText(`${t.id} ${minsToClock(t.scheduled_departure)}`, x+2, y+9);
+  });
+}
+
+// ---------- Simulation logic ----------
+function scheduleToPosition(t) {
+  // find origin and destination station indices
+  const oi = stations.findIndex(s => s.id === t.origin);
+  const di = stations.findIndex(s => s.id === t.dest);
+
+  if (oi === -1 || di === -1) {
+    console.warn("Invalid origin/destination for train:", t.id);
+    return { x: 0, y: 0, frac: 0 };
+  }
+
+  // total number of blocks (sections) between origin and destination
+  const totalSections = Math.abs(di - oi);
+
+  // elapsed time since departure
+  const elapsed = (simTime - t.scheduled_departure); 
+  const sp = Math.max(0, elapsed * (t.speed / 100)); 
+
+  // fraction progress between origin and destination
+  let frac = Math.min(1, sp / (8 * totalSections + 1));
+  if (isNaN(frac)) frac = 0;
+
+  // compute x positions correctly → ONLY origin to destination
+  const x0 = stations[oi].x + 40;
+  const x1 = stations[di].x - 40;
+  const x = x0 + (x1 - x0) * frac;
+
+  // y position based on preferred platform
+  const pfNo = parseInt((t.platform_prefered || "P1").replace("P",""));
+  const y = getPlatformY(t.origin, pfNo);
+
+  return { x, y, frac };
+}
+
+function updateTrainPosition(train) {
+  // Speed ke hisaab se progress
+  const oi = stations.findIndex(s => s.id === train.origin);
+  const di = stations.findIndex(s => s.id === train.dest);
+  const totalSections = Math.abs(di - oi);
+
+  const elapsed = (simTime - train.scheduled_departure);
+  const sp = Math.max(0, elapsed * (train.currentSpeed/100));
+  let frac = Math.min(1, sp / (8*totalSections + 1));
+  if (isNaN(frac)) frac = 0;
+
+  const x0 = stations[oi].x + 40;
+  const x1 = stations[di].x - 40;
+  train.px = x0 + (x1 - x0) * frac;
+
+  // Platform ke hisaab se Y position
+  train.py = getPlatformY(train.origin, parseInt(train.platform.replace("P","")));
+}
+
+function detectConflicts(){
+  // reset
+  liveConflicts = [];
+  // block conflict: if two trains are at very close x positions on same section (approx same block)
+  for(let i=0;i<trains.length;i++){
+    for(let j=i+1;j<trains.length;j++){
+      const a = trains[i], b = trains[j];
+      if(a.status==='finished' || b.status==='finished') continue;
+      // approximate positions
+      const pa = scheduleToPosition(a), pb = scheduleToPosition(b);
+      const dist = Math.abs(pa.x - pb.x);
+      if(dist < 40 && Math.abs(pa.frac - pb.frac) < 0.12){
+        // potential conflict
+        const conflict = {
+          id: `conf_${a.id}_${b.id}_${Math.floor(simTime)}`,
+          trains:[a.id,b.id],
+          type: 'BlockConflict',
+          time: simTime,
+          detail: `${a.id} vs ${b.id} at ~${minsToClock(simTime)}`
+        };
+        liveConflicts.push(conflict);
+      }
+      // platform conflict: approximate if both near station X and same platform preferred (not modeled here) -> simple overlap near stations
+      // headway: time-gap <3 min: evaluate scheduled_departure differences
+      const gap = Math.abs(a.scheduled_departure - b.scheduled_departure);
+      if(gap < 3){
+        liveConflicts.push({
+          id:`headway_${a.id}_${b.id}_${Math.floor(simTime)}`,
+          trains:[a.id,b.id], type:'Headway', time:simTime,
+          detail:`Headway risk between ${a.id} and ${b.id} (gap ${gap}m)`
+        });
+      }
+    }
+  }
+  // dedupe by id
+  liveConflicts = Object.values(liveConflicts.reduce((acc,c)=>{
+    acc[c.id]=c; return acc;
+  },{}));
+  kpiConf.innerText = liveConflicts.length;
+}
+
+function showConflictPopup(conf){
+  // create popup with recommended actions
+  popupContainer.innerHTML = '';
+  const el = document.createElement('div');
+  el.className='popup';
+  el.style.pointerEvents='auto';
+  el.innerHTML = `<h3>Conflict detected</h3>
+    <div class="small-muted">${conf.detail}</div>
+    <div class="tags" style="margin-top:8px"><div class="chip">${conf.type}</div></div>
+    <div style="margin-top:10px" class="small-muted">Recommendation: Hold lower-priority train at nearest siding or delay origin.</div>
+    <div class="actions">
+      <button class="btn" id="applyHold">Apply: Hold lower-priority at B-siding (5m)</button>
+      <button class="btn" id="applyDelay">Apply: Delay lower-priority at origin (7m)</button>
+      <button class="btn" id="ignoreBtn">Ignore</button>
+    </div>
+  `;
+  popupContainer.appendChild(el);
+
+  document.getElementById('applyHold').onclick = ()=>{
+    applyHold(conf);
+    popupContainer.innerHTML='';
+  };
+  document.getElementById('applyDelay').onclick = ()=>{
+    applyDelay(conf);
+    popupContainer.innerHTML='';
+  };
+  document.getElementById('ignoreBtn').onclick = ()=>{
+    logAudit({title:'Ignore', time:simTime, detail:`Controller ignored ${conf.id}`});
+    popupContainer.innerHTML='';
+  };
+
+  // auto apply after 6s if enabled
+  if(autoApplyEl.checked){
+    setTimeout(()=>{ // check still exists
+      if(popupContainer.contains(el)){
+        applyHold(conf);
+        popupContainer.innerHTML='';
+      }
+    }, 6000);
+  }
+}
+
+function applyHold(conf){
+  // pick lower-priority train to hold
+  const tA = trains.find(t=>t.id===conf.trains[0]);
+  const tB = trains.find(t=>t.id===conf.trains[1]);
+  if(!tA || !tB) return;
+  const lower = (tA.priority < tB.priority) ? tA : tB;
+  lower.status = 'held';
+  lower.timer = 5; // minutes
+  lower.px = stations.find(s=>s.id==='B').x + 90; // put in siding visual
+  lower.py = trackTopY - 20;
+  logAudit({title:`Hold applied (${lower.id})`, time:simTime, detail:`Held ${lower.id} at B-siding for 5m (by Optimizer)`});
+  resolvedCount++;
+  totalDelay += 5;
+  kpiResolved.innerText = resolvedCount;
+  kpiDelay.innerText = `${totalDelay} min`;
+}
+
+function applyDelay(conf){
+  // delay lower priority train departure
+  const tA = trains.find(t=>t.id===conf.trains[0]);
+  const tB = trains.find(t=>t.id===conf.trains[1]);
+  const lower = (tA.priority < tB.priority) ? tA : tB;
+  lower.scheduled_departure += 7;
+  logAudit({title:`Delay applied (${lower.id})`, time:simTime, detail:`Delayed ${lower.id} by 7m at origin.`});
+  resolvedCount++;
+  totalDelay += 7;
+  kpiResolved.innerText = resolvedCount;
+  kpiDelay.innerText = `${totalDelay} min`;
+}
+function getPlatformY(stationId, platformNo) {
+    const baseY = trackTopY; 
+    const offset = (platformNo - 1) * 20;  // 20px gap between platforms
+    if (stationId === "A") return baseY - 40 - offset;
+    if (stationId === "B") return baseY - 10 - offset;
+    if (stationId === "C") return trackBotY + 30 + offset;
+    if (stationId === "D") return trackBotY + 60 + offset;
+    return baseY;
+}
+
+function updatePositions(dtMinutes){
+  // dtMinutes is real minutes progressed (scaled by speed)
+  trains.forEach(tr=>{
+    if(tr.status==='held'){
+      tr.timer -= dtMinutes;
+      if(tr.timer <= 0){
+        tr.status = 'moving';
+        tr.timer = null;
+        logAudit({title:`Hold ended (${tr.id})`, time:simTime, detail:`${tr.id} re-entering mainline.`});
+      }
+      // keep siding px
+    } else {
+      // compute schedule based position
+      const pos = scheduleToPosition(tr);
+      tr.px = pos.x;
+      tr.py = pos.y;
+      // auto-state change based on progress
+      if(pos.frac > 0.99){
+        tr.status = 'finished';
+      } else if(pos.frac > 0 && tr.status === 'waiting'){
+        tr.status = 'moving';
+      }
+    }
+  });
+  // mark conflicts visually
+  trains.forEach(t=>t.status !== 'held' && (t.statusOld = t.status));
+  // if conflicts exist, mark trains' status = 'conflict' briefly
+  if(liveConflicts.length>0){
+    liveConflicts.forEach(c=>{
+      c.trains.forEach(id=>{
+        const tr = trains.find(t=>t.id===id);
+        if(tr){
+          tr.status='conflict';
+          // create popup for first conflict only
+          if(!document.querySelector('.popup')) showConflictPopup(c);
+        }
+      });
+    });
+  } else {
+    trains.forEach(t=>{
+      if(t.status==='conflict') t.status = t.statusOld || 'moving';
+    });
+  }
+}
+
+let lastTick = null;
+function tick(ts){
+  if(!lastTick) lastTick = ts;
+  const deltaMs = ts - lastTick;
+  lastTick = ts;
+  if(playing){
+    const minutesAdvanced = (deltaMs / 1000) * (speed * 0.5); // mapping: 1s -> 0.5m at 1x
+    simTime += minutesAdvanced;
+    timeSlider.value = Math.floor((simTime - startSimMinutes));
+    document.getElementById('clock').innerText = minsToClock(Math.floor(simTime));
+    updatePositions(minutesAdvanced);
+    detectConflicts();
+  }
+  drawScene();
+  requestAnimationFrame(tick);
+}
+
+// ---------- Event handlers ----------
+playBtn.onclick = ()=>{ playing = !playing; playBtn.innerText = playing ? 'Pause' : 'Play'; };
+speedEl.onchange = (e)=>{ speed = parseFloat(e.target.value); };
+timeSlider.oninput = (e)=>{ simTime = startSimMinutes + parseInt(e.target.value); document.getElementById('clock').innerText = minsToClock(simTime); updatePositions(0); detectConflicts(); drawScene(); };
+autoApplyEl.onchange = (e)=>{ /*handled in popup*/ };
+emgToggle.onchange = (e)=>{ emgActive = e.target.checked; logAudit({title:`Emergency Platform ${emgActive?'Activated':'Deactivated'}`, time:simTime, detail:`EMG toggled by controller.`}); };
+
+document.getElementById('speed').value = '1';
+timeSlider.max = 480;
+timeSlider.value = 0;
+
+// initial small audit entry
+logAudit({title:'Simulation loaded', time:simTime, detail:'Prototype-like simulation ready.'});
+
+requestAnimationFrame(tick);
+</script>
+<script>
+function showConflictPopup(conf) {
+    popupContainer.innerHTML = "";
+
+    const el = document.createElement("div");
+    el.className = "conflict-popup";
+
+    el.innerHTML = `
+        <div class="popup-header">
+            <h3>⚠️ Conflict</h3>
+            <div class="popup-controls">
+                <button class="mini-btn" id="minimizeBtn">—</button>
+                <button class="mini-btn" id="closeBtn">×</button>
+            </div>
+        </div>
+        <div class="popup-body">
+            <p>${conf.detail}</p>
+            <span class="tag">${conf.type}</span>
+            <p class="small-muted">Recommendation: Hold lower-priority train at siding or delay origin.</p>
+            <div class="actions">
+                <button class="btn" id="applyHold">Apply: Hold (5m)</button>
+                <button class="btn" id="applyDelay">Apply: Delay (7m)</button>
+                <button class="btn" id="ignoreBtn">Ignore</button>
+            </div>
+        </div>
+    `;
+    popupContainer.appendChild(el);
+
+    // --- Buttons functionality ---
+    document.getElementById("applyHold").onclick = () => {
+        applyHold(conf);
+        el.remove();
+    };
+    document.getElementById("applyDelay").onclick = () => {
+        applyDelay(conf);
+        el.remove();
+    };
+    document.getElementById("ignoreBtn").onclick = () => {
+        logAudit({ title: "Ignore", time: simTime, detail: `Ignored ${conf.id}` });
+        el.remove();
+    };
+
+    // Minimize
+    document.getElementById("minimizeBtn").onclick = () => {
+        el.classList.toggle("minimized");
+    };
+
+    // Close
+    document.getElementById("closeBtn").onclick = () => {
+        el.remove();
+    };
+}
+</script>
+
+<style>
+/* Popup Box */
+.conflict-popup {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(30,38,51,0.95);
+    color: white;
+    padding: 14px;
+    border-radius: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    z-index: 9999;
+    width: 320px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+/* Header */
+.popup-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.popup-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+.popup-controls .mini-btn {
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    margin-left: 6px;
+}
+.popup-controls .mini-btn:hover {
+    color: #2a7be4;
+}
+
+/* Body */
+.popup-body {
+    margin-top: 8px;
+}
+.conflict-popup .tag {
+    display: inline-block;
+    background: #444;
+    padding: 4px 10px;
+    margin: 6px 0;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.conflict-popup .actions {
+    margin-top: 10px;
+}
+.conflict-popup .actions .btn {
+    margin: 4px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: #2a7be4;
+    color: white;
+    cursor: pointer;
+}
+.conflict-popup .actions .btn:hover {
+    background: #1b5bbf;
+}
+
+/* Minimized State */
+.conflict-popup.minimized {
+    height: 28px;
+    overflow: hidden;
+    padding: 6px 14px;
+    width: 180px;
+}
+.conflict-popup.minimized .popup-body {
+    display: none;
+}
+
+</style>
+<script>
+function updateSimulation() {
+  trains.forEach(tr => {
+    // 🚆 Apply railway rules before drawing
+    applyRailwayRules(tr, trains);
+
+    // Drawing code
+    const x = tr.px || (stations.find(s=>s.id===tr.origin).x);
+    const y = tr.py || trackTopY - 10;
+    // ... rest drawing
+  });
+}
+
+/* --------------------------------
+   🚆 Railway Rules Engine (Helper)
+---------------------------------*/
+function applyRailwayRules(train, allTrains) {
+  // Block rule
+  if (blockOccupied(train.block, allTrains)) {
+    showConflictPopup({
+      type: "BlockConflict",
+      detail: `${train.id} blocked at ${train.block}`
+    });
+    train.hold = true;
+    return;
+  }
+
+  // Platform rule
+  if (platformOccupied(train.nextStation, train.platform, allTrains)) {
+    showConflictPopup({
+      type: "PlatformConflict",
+      detail: `${train.id} waiting for free platform ${train.platform}`
+    });
+    train.hold = true;
+    return;
+  }
+
+  // Headway rule
+  if (!checkHeadway(train, allTrains)) {
+    showConflictPopup({
+      type: "HeadwayViolation",
+      detail: `${train.id} violates 3-min headway`
+    });
+    train.hold = true;
+    return;
+  }
+
+  // Safety overlap
+  if (!isOverlapClear(train, allTrains)) {
+    showConflictPopup({
+      type: "SafetyOverlap",
+      detail: `${train.id} overlap not clear`
+    });
+    train.hold = true;
+    return;
+  }
+
+  // Speed restriction
+  const maxSpeed = blockSpeedLimit(train.block);
+  train.currentSpeed = Math.min(train.speed, maxSpeed);
+}
+
+/* ---- Rule helpers ---- */
+
+// Rule 1: Block Rule
+function blockOccupied(block, trains) {
+  return trains.some(t => t.block === block && t.id !== trains.id);
+}
+
+// Rule 2: Platform Rule
+function platformOccupied(station, platform, trains) {
+  return trains.some(t => t.nextStation === station && t.platform === platform && !t.departed);
+}
+
+// Rule 3: Headway Rule (3 minutes)
+function checkHeadway(train, trains) {
+  const sameTrackTrains = trains.filter(t => t.block === train.block && t.id !== train.id);
+  return sameTrackTrains.every(t => Math.abs(train.scheduled_departure - t.scheduled_departure) >= 3);
+}
+
+// Rule 4: Safety Overlap Rule
+function isOverlapClear(train, trains) {
+  return trains.every(t => t.block !== train.overlapBlock);
+}
+
+// Rule 5: Speed Restrictions
+function blockSpeedLimit(block) {
+  // Example speed restrictions
+  const limits = {
+    "bridge1": 60,
+    "curveA": 50,
+    "workzone": 40
+  };
+  return limits[block] || 100; // default 100
+}
+
+</script>
+
+
+
+</body>
+</html>
