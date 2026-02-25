@@ -89,3 +89,16 @@ The system is designed in multiple intelligent layers:
 - Fewer scheduling conflicts  
 
 ### 📷 Output Results
+<img width="1919" height="914" alt="Screenshot 2025-09-28 132033" src="https://github.com/user-attachments/assets/5683f70c-e25b-452a-b6e8-13414b074d22" /><img width="1919" height="906" alt="Screenshot 2025-09-28 131914" src="https://github.com/user-attachments/assets/dd2fb09c-0657-4629-be9e-601cbb3cb97e" /><img width="1919" height="907" alt="Screenshot 2025-09-28 131929" src="https://github.com/user-attachments/assets/1f8f5ba7-1d39-4ebe-a1b2-7f9c7171ed71" /><img width="1919" height="907" alt="Screenshot 2025-09-28 170229" src="https://github.com/user-attachments/assets/6279a1e9-d052-4608-b9a1-53d99f3d0cf1" />
+
+## 🔮 Future Scope
+- 🤖 AI/ML-based predictive scheduling  
+- 📡 Real-time railway data integration  
+- 📊 Live dashboards and analytics  
+- 🌐 Nationwide deployment
+
+  ## 📜 License
+This project is licensed under the MIT License.
+
+
+
